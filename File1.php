@@ -1,6 +1,9 @@
 <?
 
-echo "Hello world";
+function demo{
 
+
+echo "Hello world";
+}
 
 ?>
