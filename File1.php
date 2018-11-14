@@ -1,6 +1,6 @@
 <?
 
-function demo123{
+function demo123ahdfjh{
 
 
 echo "Hello world";
