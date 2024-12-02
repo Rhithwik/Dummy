@@ -139,25 +139,23 @@ function custom_layout_restriction_form_alter(&$form, FormStateInterface $form_s
 
 ‐-------
 
-<?php
+public function listAvailableLayouts(Request $request, $node_id) {
+  $node = Node::load($node_id);
 
-namespace Drupal\custom_module\Controller;
+  if ($node && $node->hasField('layout_sections')) {
+    $sections = $node->get('layout_sections')->getValue();
+    $layouts = array_column($sections, 'layout_id');
 
-use Drupal\Core\Controller\ControllerBase;
-use Symfony\Component\HttpFoundation\Request;
+    if (empty($layouts)) {
+      // Allow all layouts since no sections exist.
+      return $this->getAllLayouts();
+    }
 
-/**
- * Custom controller to override the existing page.
- */
-class CustomController extends ControllerBase {
-
-  /**
-   * Custom method to handle the page request.
-   */
-  public function someMethod(Request $request) {
-    // Add your custom logic here.
-    return [
-      '#markup' => $this->t('This is the overridden page content.'),
-    ];
+    // Restrict to the first layout.
+    $allowed_layout = $layouts[0];
+    return $this->getLayoutsById([$allowed_layout]);
   }
+
+  // Default behavior if no sections or node is invalid.
+  return $this->getAllLayouts();
 }
