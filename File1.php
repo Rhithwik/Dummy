@@ -136,3 +136,28 @@ function custom_layout_restriction_form_alter(&$form, FormStateInterface $form_s
     }
   }
 }
+
+‐-------
+
+<?php
+
+namespace Drupal\custom_module\Controller;
+
+use Drupal\Core\Controller\ControllerBase;
+use Symfony\Component\HttpFoundation\Request;
+
+/**
+ * Custom controller to override the existing page.
+ */
+class CustomController extends ControllerBase {
+
+  /**
+   * Custom method to handle the page request.
+   */
+  public function someMethod(Request $request) {
+    // Add your custom logic here.
+    return [
+      '#markup' => $this->t('This is the overridden page content.'),
+    ];
+  }
+}
