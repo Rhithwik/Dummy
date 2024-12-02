@@ -139,23 +139,85 @@ function custom_layout_restriction_form_alter(&$form, FormStateInterface $form_s
 
 ‐-------
 
-public function listAvailableLayouts(Request $request, $node_id) {
-  $node = Node::load($node_id);
+<?php
 
-  if ($node && $node->hasField('layout_sections')) {
-    $sections = $node->get('layout_sections')->getValue();
-    $layouts = array_column($sections, 'layout_id');
+namespace Drupal\custom_module\Controller;
 
-    if (empty($layouts)) {
-      // Allow all layouts since no sections exist.
-      return $this->getAllLayouts();
-    }
+use Drupal\Core\Controller\ControllerBase;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 
-    // Restrict to the first layout.
-    $allowed_layout = $layouts[0];
-    return $this->getLayoutsById([$allowed_layout]);
+/**
+ * Custom controller to restrict layouts based on node.
+ */
+class CustomController extends ControllerBase {
+
+  /**
+   * The entity type manager service.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected $entityTypeManager;
+
+  /**
+   * Constructs the controller.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager service.
+   */
+  public function __construct(EntityTypeManagerInterface $entity_type_manager) {
+    $this->entityTypeManager = $entity_type_manager;
   }
 
-  // Default behavior if no sections or node is invalid.
-  return $this->getAllLayouts();
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static(
+      $container->get('entity_type.manager')
+    );
+  }
+
+  /**
+   * Custom method to handle the page request.
+   */
+  public function restrictLayouts(Request $request) {
+    // Get the current node from the route.
+    $node = \Drupal::routeMatch()->getParameter('node');
+
+    if ($node && $node->hasField('layout_sections')) {
+      // Get the layout sections field.
+      $sections = $node->get('layout_sections')->getValue();
+
+      // Extract layout IDs.
+      $layouts = array_column($sections, 'layout_id');
+
+      // Example: Restrict layouts to the first one used.
+      $allowed_layouts = empty($layouts) ? $this->getAllLayouts() : [$layouts[0]];
+
+      return [
+        '#theme' => 'item_list',
+        '#items' => $allowed_layouts,
+        '#title' => $this->t('Allowed Layouts'),
+      ];
+    }
+
+    // If no node or layout sections are found.
+    return [
+      '#markup' => $this->t('No layouts found or no node context.'),
+    ];
+  }
+
+  /**
+   * Helper method to get all available layouts.
+   *
+   * @return array
+   *   An array of all layout plugin IDs.
+   */
+  private function getAllLayouts() {
+    $layout_definition = \Drupal::service('plugin.manager.core.layout');
+    $layouts = $layout_definition->getDefinitions();
+    return array_keys($layouts);
+  }
 }
