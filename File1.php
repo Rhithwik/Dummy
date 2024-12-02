@@ -100,3 +100,39 @@ services:
     arguments: ['@entity_type.manager']
     tags:
       - { name: event_subscriber }
+
+
+---
+
+<?php
+
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ * Implements hook_form_alter().
+ */
+function custom_layout_restriction_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Target the Layout Builder's "Add Section" form.
+  if ($form_id === 'layout_builder_add_section_form') {
+    // Get the node from the route.
+    $route_match = \Drupal::routeMatch();
+    $node = $route_match->getParameter('node');
+
+    if ($node && $node->hasField('layout_sections')) {
+      $sections = $node->get('layout_sections')->getValue();
+
+      // Scenario 1 and 4: No sections exist or all sections removed.
+      if (empty($sections)) {
+        return; // Allow all layouts.
+      }
+
+      // Scenario 2 and 3: Restrict to the layout of the first section.
+      $first_layout_id = $sections[0]['layout_id'];
+      if (isset($form['layout_id']['#options'][$first_layout_id])) {
+        $form['layout_id']['#options'] = [
+          $first_layout_id => $form['layout_id']['#options'][$first_layout_id],
+        ];
+      }
+    }
+  }
+}
