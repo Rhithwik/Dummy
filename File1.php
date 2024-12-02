@@ -138,20 +138,26 @@ function custom_layout_restriction_form_alter(&$form, FormStateInterface $form_s
 }
 
 ‐-------
-
 <?php
 
 namespace Drupal\custom_module\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\Request;
+use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 
 /**
- * Custom controller to restrict layouts based on node.
+ * Custom controller to handle temporary layouts.
  */
 class CustomController extends ControllerBase {
+
+  /**
+   * The tempstore.private service.
+   *
+   * @var \Drupal\Core\TempStore\PrivateTempStoreFactory
+   */
+  protected $tempStore;
 
   /**
    * The entity type manager service.
@@ -161,12 +167,15 @@ class CustomController extends ControllerBase {
   protected $entityTypeManager;
 
   /**
-   * Constructs the controller.
+   * Constructs the custom controller.
    *
+   * @param \Drupal\Core\TempStore\PrivateTempStoreFactory $temp_store
+   *   The tempstore.private service.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager service.
    */
-  public function __construct(EntityTypeManagerInterface $entity_type_manager) {
+  public function __construct(PrivateTempStoreFactory $temp_store, EntityTypeManagerInterface $entity_type_manager) {
+    $this->tempStore = $temp_store->get('layout_builder');
     $this->entityTypeManager = $entity_type_manager;
   }
 
@@ -175,49 +184,48 @@ class CustomController extends ControllerBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
+      $container->get('tempstore.private'),
       $container->get('entity_type.manager')
     );
   }
 
   /**
-   * Custom method to handle the page request.
-   */
-  public function restrictLayouts(Request $request) {
-    // Get the current node from the route.
-    $node = \Drupal::routeMatch()->getParameter('node');
-
-    if ($node && $node->hasField('layout_sections')) {
-      // Get the layout sections field.
-      $sections = $node->get('layout_sections')->getValue();
-
-      // Extract layout IDs.
-      $layouts = array_column($sections, 'layout_id');
-
-      // Example: Restrict layouts to the first one used.
-      $allowed_layouts = empty($layouts) ? $this->getAllLayouts() : [$layouts[0]];
-
-      return [
-        '#theme' => 'item_list',
-        '#items' => $allowed_layouts,
-        '#title' => $this->t('Allowed Layouts'),
-      ];
-    }
-
-    // If no node or layout sections are found.
-    return [
-      '#markup' => $this->t('No layouts found or no node context.'),
-    ];
-  }
-
-  /**
-   * Helper method to get all available layouts.
+   * Fetch temporarily stored layout data for a node.
+   *
+   * @param int $node_id
+   *   The node ID.
    *
    * @return array
-   *   An array of all layout plugin IDs.
+   *   Render array or message.
    */
-  private function getAllLayouts() {
-    $layout_definition = \Drupal::service('plugin.manager.core.layout');
-    $layouts = $layout_definition->getDefinitions();
-    return array_keys($layouts);
+  public function getTemporaryLayout($node_id) {
+    // Load the node entity.
+    $node = $this->entityTypeManager->getStorage('node')->load($node_id);
+
+    if ($node) {
+      $temp_key = 'node:' . $node->bundle() . ':' . $node_id;
+
+      // Fetch the temporary layout data.
+      $temp_data = $this->tempStore->get($temp_key);
+
+      if ($temp_data) {
+        // Example: Return the temporary layout sections.
+        return [
+          '#theme' => 'item_list',
+          '#items' => array_keys($temp_data['sections']), // Section layout IDs
+          '#title' => $this->t('Temporary Layouts'),
+        ];
+      }
+      else {
+        return [
+          '#markup' => $this->t('No temporary layout data found for this node.'),
+        ];
+      }
+    }
+    else {
+      return [
+        '#markup' => $this->t('Node not found.'),
+      ];
+    }
   }
 }
