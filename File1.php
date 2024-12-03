@@ -1,19 +1,7 @@
 <?
 
-services:
-  my_module.layout_builder_section_storage:
-    class: Drupal\my_module\Plugin\CustomSectionStorage
-    arguments: ['@layout_builder.section_storage_manager']
-    tags:
-      - { name: layout_builder.section_storage }
-
------
-
-src/plugin/CustoSectionStorage.yml
-
 namespace Drupal\my_module\Plugin;
 
-use Drupal\layout_builder\SectionStorageInterface;
 use Drupal\layout_builder\SectionStorage\DefaultsSectionStorage;
 
 /**
@@ -27,22 +15,40 @@ class CustomSectionStorage extends DefaultsSectionStorage {
   public function getAvailableLayouts() {
     // Fetch current sections from storage.
     $sections = $this->getSections();
+    $route_name = \Drupal::routeMatch()->getRouteName();
+    $node = \Drupal::routeMatch()->getParameter('node');
     $placed_layouts = [];
 
     foreach ($sections as $section) {
       $placed_layouts[] = $section->getLayoutId();
     }
 
-    // No layouts placed: allow all layouts.
-    if (empty($placed_layouts)) {
+    // New detail page: allow all layouts if no sections are placed.
+    if ($route_name === 'entity.node.add_form' && empty($placed_layouts)) {
       return $this->getAllLayouts();
     }
 
-    // Restrict layouts to the one already placed.
-    $allowed_layout = reset($placed_layouts);
-    return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
-      return $layout->getPluginId() === $allowed_layout;
-    });
+    // Node edit page: restrict to current layouts or reset if none exist.
+    if ($node && $route_name === 'entity.node.edit_form') {
+      if (empty($placed_layouts)) {
+        return $this->getAllLayouts();
+      }
+      $allowed_layout = reset($placed_layouts);
+      return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
+        return $layout->getPluginId() === $allowed_layout;
+      });
+    }
+
+    // General case: restrict to the layout already placed.
+    if (!empty($placed_layouts)) {
+      $allowed_layout = reset($placed_layouts);
+      return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
+        return $layout->getPluginId() === $allowed_layout;
+      });
+    }
+
+    // Default to all layouts.
+    return $this->getAllLayouts();
   }
 
   /**
@@ -54,55 +60,4 @@ class CustomSectionStorage extends DefaultsSectionStorage {
   protected function getAllLayouts() {
     return \Drupal::service('plugin.manager.core.layout')->getDefinitions();
   }
-}
-
--------
-
-public function getAvailableLayouts() {
-  $sections = $this->getSections();
-
-  // If no sections exist, return all layouts.
-  if (empty($sections)) {
-    return $this->getAllLayouts();
-  }
-
-  $placed_layouts = [];
-  foreach ($sections as $section) {
-    $placed_layouts[] = $section->getLayoutId();
-  }
-
-  // Restrict layouts to the one already placed.
-  $allowed_layout = reset($placed_layouts);
-  return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
-    return $layout->getPluginId() === $allowed_layout;
-  });
-}
-
-------
-
-public function getAvailableLayouts() {
-  $sections = $this->getSections();
-  $route_name = \Drupal::routeMatch()->getRouteName();
-  $node = \Drupal::routeMatch()->getParameter('node');
-
-  // Node editing: restrict to current layouts.
-  if ($node && $route_name === 'entity.node.edit_form') {
-    $placed_layouts = [];
-    foreach ($sections as $section) {
-      $placed_layouts[] = $section->getLayoutId();
-    }
-
-    // Allow all layouts if none are placed.
-    if (empty($placed_layouts)) {
-      return $this->getAllLayouts();
-    }
-
-    $allowed_layout = reset($placed_layouts);
-    return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
-      return $layout->getPluginId() === $allowed_layout;
-    });
-  }
-
-  // Default behavior.
-  return parent::getAvailableLayouts();
 }
