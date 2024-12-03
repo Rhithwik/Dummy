@@ -12,72 +12,58 @@ echo "Hello world";
 ?>
 
 
-namespace Drupal\custom_module\Controller;
 
-use Drupal\Core\Controller\ControllerBase;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\TempStore\PrivateTempStoreFactory;
-use Symfony\Component\HttpFoundation\JsonResponse;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 
-/**
- * Provides restricted layouts based on the first section.
- */
-class LayoutRestrictionController extends ControllerBase {
+class CustomSectionController extends ControllerBase {
 
-  /**
-   * The tempstore.private service.
-   *
-   * @var \Drupal\Core\TempStore\PrivateTempStoreFactory
-   */
   protected $tempStore;
+  protected $entityTypeManager;
 
-  /**
-   * Constructs the LayoutRestrictionController.
-   *
-   * @param \Drupal\Core\TempStore\PrivateTempStoreFactory $temp_store
-   *   The tempstore.private service.
-   */
-  public function __construct(PrivateTempStoreFactory $temp_store) {
+  public function __construct(PrivateTempStoreFactory $temp_store, EntityTypeManagerInterface $entity_type_manager) {
     $this->tempStore = $temp_store->get('layout_builder');
+    $this->entityTypeManager = $entity_type_manager;
   }
 
-  /**
-   * {@inheritdoc}
-   */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('tempstore.private')
+      $container->get('tempstore.private'),
+      $container->get('entity_type.manager')
     );
   }
 
-  /**
-   * Fetch restricted layouts based on the first section.
-   */
-  public function getRestrictedLayouts() {
-    $request = \Drupal::request();
-    $bundle = $request->query->get('bundle');
+  public function build($entity, $view_mode, array $contexts) {
+    $layout_data = [];
 
-    if ($bundle) {
-      // Get all tempstore keys.
-      $temp_keys = $this->tempStore->getAll();
+    // Check if the node is saved or unsaved.
+    if ($entity->isNew()) {
+      // Unsaved node: Retrieve layout from tempstore.
+      $bundle = $entity->bundle();
+      $tempstore_key = "node:{$bundle}:{$entity->uuid()}";
 
-      // Find the relevant tempstore key.
-      foreach ($temp_keys as $key => $data) {
-        if (strpos($key, "node:$bundle:") === 0) {
-          if (!empty($data['sections'])) {
-            // Get the layout ID of the first section.
-            $first_section = reset($data['sections']);
-            $layout_id = $first_section['layout_id'] ?? NULL;
+      $temp_data = $this->tempStore->get($tempstore_key);
 
-            // Return the restricted layouts.
-            if ($layout_id) {
-              return new JsonResponse(['restricted_layouts' => $layout_id]);
-            }
-          }
+      if ($temp_data && !empty($temp_data['sections'])) {
+        foreach ($temp_data['sections'] as $section) {
+          $layout_data[] = $section['layout_id'];
+        }
+      }
+    }
+    else {
+      // Saved node: Retrieve layout from the database.
+      $sections = $entity->get('layout_builder__sections')->getValue();
+      foreach ($sections as $section) {
+        $section_data = $section['section'];
+        if (!empty($section_data['layout_id'])) {
+          $layout_data[] = $section_data['layout_id'];
         }
       }
     }
 
-    return new JsonResponse(['restricted_layouts' => NULL]);
+    // Now you have the layout data, proceed with your custom logic.
+    return [
+      '#markup' => $this->t('Layouts: @layouts', ['@layouts' => implode(', ', $layout_data)]),
+    ];
   }
 }
