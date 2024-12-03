@@ -1,43 +1,51 @@
 <?
 
 
-function demo_new{
-
-
-echo "Hello world";
-}
-
-/*Testing the sfuffs*/
-
-
-
-
+use Drupal\layout_builder\SectionStorageInterface;
 use Drupal\Core\TempStore\PrivateTempStoreFactory;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
-class CustomSectionController extends ControllerBase {
+class CustomSectionController {
 
   protected $tempStore;
-  protected $entityTypeManager;
 
-  public function __construct(PrivateTempStoreFactory $temp_store, EntityTypeManagerInterface $entity_type_manager) {
+  /**
+   * Constructor.
+   *
+   * @param \Drupal\Core\TempStore\PrivateTempStoreFactory $temp_store
+   *   The tempstore.private service.
+   */
+  public function __construct(PrivateTempStoreFactory $temp_store) {
     $this->tempStore = $temp_store->get('layout_builder');
-    $this->entityTypeManager = $entity_type_manager;
   }
 
+  /**
+   * Create method for dependency injection.
+   */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('tempstore.private'),
-      $container->get('entity_type.manager')
+      $container->get('tempstore.private')
     );
   }
 
-  public function build($entity, $view_mode, array $contexts) {
-    $layout_data = [];
+  /**
+   * Build method.
+   *
+   * @param \Drupal\layout_builder\SectionStorageInterface $section_storage
+   *   The section storage interface.
+   * @param int $delta
+   *   The index of the section.
+   *
+   * @return array
+   *   A renderable array.
+   */
+  public function build(SectionStorageInterface $section_storage, int $delta) {
+    $layouts = [];
 
-    // Check if the node is saved or unsaved.
-    if ($entity->isNew()) {
+    // Check if the entity is saved or unsaved.
+    if ($section_storage->isOverridable()) {
       // Unsaved node: Retrieve layout from tempstore.
+      $entity = $section_storage->getContextValue('entity');
       $bundle = $entity->bundle();
       $tempstore_key = "node:{$bundle}:{$entity->uuid()}";
 
@@ -45,24 +53,26 @@ class CustomSectionController extends ControllerBase {
 
       if ($temp_data && !empty($temp_data['sections'])) {
         foreach ($temp_data['sections'] as $section) {
-          $layout_data[] = $section['layout_id'];
+          $layouts[] = $section['layout_id'] ?? 'unknown';
         }
       }
     }
     else {
-      // Saved node: Retrieve layout from the database.
-      $sections = $entity->get('layout_builder__sections')->getValue();
-      foreach ($sections as $section) {
-        $section_data = $section['section'];
-        if (!empty($section_data['layout_id'])) {
-          $layout_data[] = $section_data['layout_id'];
-        }
+      // Saved node: Get layout data directly from the section storage.
+      foreach ($section_storage->getSections() as $section_index => $section) {
+        $layouts[] = $section->getLayoutId();
       }
     }
 
-    // Now you have the layout data, proceed with your custom logic.
+    // Access the layout of the current section using $delta.
+    $current_layout = $layouts[$delta] ?? 'none';
+
+    // Return a renderable array or use the layout data.
     return [
-      '#markup' => $this->t('Layouts: @layouts', ['@layouts' => implode(', ', $layout_data)]),
+      '#theme' => 'item_list',
+      '#title' => $this->t('Layouts in Section Storage'),
+      '#items' => $layouts,
+      '#footer' => $this->t('Current Section Layout: @layout', ['@layout' => $current_layout]),
     ];
   }
 }
