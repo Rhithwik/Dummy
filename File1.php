@@ -76,3 +76,59 @@ class CustomSectionController {
     ];
   }
 }
+
+-----------
+
+use Drupal\Core\TempStore\PrivateTempStoreFactory;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+
+/**
+ * Custom service to retrieve layout information.
+ */
+class LayoutHelper {
+
+  /**
+   * The tempstore.private service.
+   *
+   * @var \Drupal\Core\TempStore\PrivateTempStoreFactory
+   */
+  protected $tempStore;
+
+  /**
+   * Constructs the layout helper.
+   *
+   * @param \Drupal\Core\TempStore\PrivateTempStoreFactory $temp_store
+   *   The tempstore.private service.
+   */
+  public function __construct(PrivateTempStoreFactory $temp_store) {
+    $this->tempStore = $temp_store->get('layout_builder');
+  }
+
+  /**
+   * Get the layout of the first section for an unsaved node.
+   *
+   * @param string $bundle
+   *   The content type of the node.
+   *
+   * @return string|null
+   *   The layout ID of the first section, or NULL if not found.
+   */
+  public function getFirstSectionLayout($bundle) {
+    // Retrieve all tempstore keys.
+    $temp_keys = $this->tempStore->getAll();
+
+    // Find the tempstore key for the current bundle.
+    foreach ($temp_keys as $key => $data) {
+      if (strpos($key, "node:$bundle:") === 0) {
+        // Check if sections exist.
+        if (!empty($data['sections'])) {
+          // Return the layout ID of the first section.
+          $first_section = reset($data['sections']);
+          return $first_section['layout_id'] ?? NULL;
+        }
+      }
+    }
+
+    return NULL;
+  }
+}
