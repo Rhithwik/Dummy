@@ -1,63 +1,120 @@
-<?
+<?php
+
+services:
+  my_module.section_storage_manager:
+    class: Drupal\my_module\Plugin\CustomSectionStorageManager
+    arguments: ['@entity_type.manager', '@config.factory']
+    tags:
+      - { name: service_subscriber }
+    decorates: layout_builder.section_storage_manager
+    decoration_priority: 10
+
+----
+customSectionManager.php
 
 namespace Drupal\my_module\Plugin;
 
-use Drupal\layout_builder\SectionStorage\DefaultsSectionStorage;
+use Drupal\layout_builder\SectionStorage\SectionStorageManager;
 
 /**
- * Custom section storage to restrict layout options dynamically.
+ * Custom Section Storage Manager to control layout availability.
  */
-class CustomSectionStorage extends DefaultsSectionStorage {
+class CustomSectionStorageManager extends SectionStorageManager {
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getSectionStorage($storage_id) {
+    $section_storage = parent::getSectionStorage($storage_id);
+
+    // Wrap the section storage with custom logic.
+    return new CustomSectionStorage($section_storage);
+  }
+
+
+----
+
+
+namespace Drupal\my_module\Plugin;
+
+use Drupal\layout_builder\SectionStorage\SectionStorageInterface;
+
+/**
+ * Custom Section Storage to dynamically restrict layouts.
+ */
+class CustomSectionStorage implements SectionStorageInterface {
+
+  /**
+   * The original section storage.
+   *
+   * @var \Drupal\layout_builder\SectionStorage\SectionStorageInterface
+   */
+  protected $originalSectionStorage;
+
+  /**
+   * Constructs a CustomSectionStorage object.
+   *
+   * @param \Drupal\layout_builder\SectionStorage\SectionStorageInterface $section_storage
+   *   The original section storage.
+   */
+  public function __construct(SectionStorageInterface $section_storage) {
+    $this->originalSectionStorage = $section_storage;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getSections() {
+    return $this->originalSectionStorage->getSections();
+  }
 
   /**
    * {@inheritdoc}
    */
   public function getAvailableLayouts() {
-    // Fetch current sections from storage.
+    // Get placed layouts from current sections.
     $sections = $this->getSections();
-    $route_name = \Drupal::routeMatch()->getRouteName();
-    $node = \Drupal::routeMatch()->getParameter('node');
     $placed_layouts = [];
 
     foreach ($sections as $section) {
       $placed_layouts[] = $section->getLayoutId();
     }
 
-    // New detail page: allow all layouts if no sections are placed.
-    if ($route_name === 'entity.node.add_form' && empty($placed_layouts)) {
+    // New detail page or no sections placed: allow all layouts.
+    if (empty($placed_layouts)) {
       return $this->getAllLayouts();
     }
 
-    // Node edit page: restrict to current layouts or reset if none exist.
-    if ($node && $route_name === 'entity.node.edit_form') {
-      if (empty($placed_layouts)) {
-        return $this->getAllLayouts();
-      }
-      $allowed_layout = reset($placed_layouts);
-      return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
-        return $layout->getPluginId() === $allowed_layout;
-      });
-    }
-
-    // General case: restrict to the layout already placed.
-    if (!empty($placed_layouts)) {
-      $allowed_layout = reset($placed_layouts);
-      return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
-        return $layout->getPluginId() === $allowed_layout;
-      });
-    }
-
-    // Default to all layouts.
-    return $this->getAllLayouts();
+    // Restrict to the layout already placed.
+    $allowed_layout = reset($placed_layouts);
+    return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
+      return $layout->getPluginId() === $allowed_layout;
+    });
   }
 
   /**
-   * Returns all available layouts.
-   *
-   * @return \Drupal\Core\Layout\LayoutInterface[]
-   *   An array of all layout plugins.
+   * {@inheritdoc}
    */
-  protected function getAllLayouts() {
+  public function getAllLayouts() {
+    // Fetch all layouts from the plugin manager.
     return \Drupal::service('plugin.manager.core.layout')->getDefinitions();
   }
+
+  /**
+   * Other methods required by the SectionStorageInterface can delegate
+   * to the original storage if no custom logic is required.
+   */
+  public function getStorageId() {
+    return $this->originalSectionStorage->getStorageId();
+  }
+
+  public function getContext() {
+    return $this->originalSectionStorage->getContext();
+  }
+
+  public function getEntity() {
+    return $this->originalSectionStorage->getEntity();
+  }
+
+  // Add other required methods...
 }
