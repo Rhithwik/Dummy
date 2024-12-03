@@ -1,86 +1,72 @@
 <?php
-module
-
-
-/**
- * Implements hook_layout_builder_alter().
- */
-function my_module_layout_builder_alter(array &$build, \Drupal\Core\Entity\EntityInterface $entity, string $display_id, array $context) {
-  // Check if the context is a node.
-  if ($entity->getEntityTypeId() === 'node') {
-    // Modify the available layouts dynamically.
-    $layout_definitions = \Drupal::service('plugin.manager.core.layout')->getDefinitions();
-
-    // Get the sections already placed.
-    $sections = $entity->get('layout_builder__layout')->getValue();
-
-    $allowed_layouts = [];
-    if (!empty($sections)) {
-      // Restrict layouts to the one already placed.
-      $placed_layout = $sections[0]['section_storage']->getLayoutId();
-      foreach ($layout_definitions as $id => $definition) {
-        if ($id === $placed_layout) {
-          $allowed_layouts[$id] = $definition;
-        }
-      }
-    }
-    else {
-      // No layouts placed: allow all layouts.
-      $allowed_layouts = $layout_definitions;
-    }
-
-    // Replace the layout options in the context.
-    $context['layout_builder']['available_layouts'] = $allowed_layouts;
-  }
-}
-
-
----------
-
-service 
 
 services:
-  my_module.layout_manager:
-    class: Drupal\my_module\Plugin\CustomLayoutManager
-    arguments: ['@plugin.manager.core.layout']
-    tags:
-      - { name: layout_builder.plugin_manager }
+  my_module.custom_section_storage:
+    class: Drupal\my_module\Plugin\CustomSectionStorage
+    decorates: layout_builder.default_section_storage
+    decoration_priority: 10
+    arguments: ['@layout_builder.default_section_storage']
 
 
 
-----
-
-customLayoutManager.php
 
 namespace Drupal\my_module\Plugin;
 
-use Drupal\Core\Layout\LayoutPluginManager;
+use Drupal\layout_builder\SectionStorage\DefaultsSectionStorage;
 
 /**
- * Custom layout plugin manager.
+ * Custom Section Storage for Layout Builder.
  */
-class CustomLayoutManager extends LayoutPluginManager {
+class CustomSectionStorage extends DefaultsSectionStorage {
 
   /**
-   * Restrict available layouts dynamically.
-   *
-   * @return array
-   *   Filtered layout definitions.
+   * {@inheritdoc}
    */
-  public function getDefinitions() {
-    $layouts = parent::getDefinitions();
+  public function getAvailableLayouts() {
+    // Fetch the current sections and determine allowed layouts.
+    $sections = $this->getSections();
+    $route_name = \Drupal::routeMatch()->getRouteName();
+    $node = \Drupal::routeMatch()->getParameter('node');
+    $placed_layouts = [];
 
-    // Restrict layouts based on custom logic.
-    // Example: Filter to only certain layout IDs.
-    $allowed_layouts = [];
-    foreach ($layouts as $id => $definition) {
-      if (in_array($id, ['layout_one', 'layout_two'])) {
-        $allowed_layouts[$id] = $definition;
-      }
+    foreach ($sections as $section) {
+      $placed_layouts[] = $section->getLayoutId();
     }
 
-    return $allowed_layouts;
+    // Node editing scenario.
+    if ($node && $route_name === 'entity.node.edit_form') {
+      if (empty($placed_layouts)) {
+        // No sections placed, return all layouts.
+        return $this->getAllLayouts();
+      }
+
+      // Restrict to the layout currently in use.
+      $allowed_layout = reset($placed_layouts);
+      return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
+        return $layout->getPluginId() === $allowed_layout;
+      });
+    }
+
+    // Default behavior: restrict to the layout already placed.
+    if (!empty($placed_layouts)) {
+      $allowed_layout = reset($placed_layouts);
+      return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
+        return $layout->getPluginId() === $allowed_layout;
+      });
+    }
+
+    // Default to all layouts.
+    return $this->getAllLayouts();
+  }
+
+  /**
+   * Get all layouts.
+   *
+   * @return array
+   *   All available layout definitions.
+   */
+  protected function getAllLayouts() {
+    $layout_manager = \Drupal::service('plugin.manager.core.layout');
+    return $layout_manager->getDefinitions();
   }
 }
-
-----------
