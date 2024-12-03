@@ -1,120 +1,86 @@
 <?php
+module
+
+
+/**
+ * Implements hook_layout_builder_alter().
+ */
+function my_module_layout_builder_alter(array &$build, \Drupal\Core\Entity\EntityInterface $entity, string $display_id, array $context) {
+  // Check if the context is a node.
+  if ($entity->getEntityTypeId() === 'node') {
+    // Modify the available layouts dynamically.
+    $layout_definitions = \Drupal::service('plugin.manager.core.layout')->getDefinitions();
+
+    // Get the sections already placed.
+    $sections = $entity->get('layout_builder__layout')->getValue();
+
+    $allowed_layouts = [];
+    if (!empty($sections)) {
+      // Restrict layouts to the one already placed.
+      $placed_layout = $sections[0]['section_storage']->getLayoutId();
+      foreach ($layout_definitions as $id => $definition) {
+        if ($id === $placed_layout) {
+          $allowed_layouts[$id] = $definition;
+        }
+      }
+    }
+    else {
+      // No layouts placed: allow all layouts.
+      $allowed_layouts = $layout_definitions;
+    }
+
+    // Replace the layout options in the context.
+    $context['layout_builder']['available_layouts'] = $allowed_layouts;
+  }
+}
+
+
+---------
+
+service 
 
 services:
-  my_module.section_storage_manager:
-    class: Drupal\my_module\Plugin\CustomSectionStorageManager
-    arguments: ['@entity_type.manager', '@config.factory']
+  my_module.layout_manager:
+    class: Drupal\my_module\Plugin\CustomLayoutManager
+    arguments: ['@plugin.manager.core.layout']
     tags:
-      - { name: service_subscriber }
-    decorates: layout_builder.section_storage_manager
-    decoration_priority: 10
+      - { name: layout_builder.plugin_manager }
 
-----
-customSectionManager.php
-
-namespace Drupal\my_module\Plugin;
-
-use Drupal\layout_builder\SectionStorage\SectionStorageManager;
-
-/**
- * Custom Section Storage Manager to control layout availability.
- */
-class CustomSectionStorageManager extends SectionStorageManager {
-
-  /**
-   * {@inheritdoc}
-   */
-  public function getSectionStorage($storage_id) {
-    $section_storage = parent::getSectionStorage($storage_id);
-
-    // Wrap the section storage with custom logic.
-    return new CustomSectionStorage($section_storage);
-  }
 
 
 ----
 
+customLayoutManager.php
 
 namespace Drupal\my_module\Plugin;
 
-use Drupal\layout_builder\SectionStorage\SectionStorageInterface;
+use Drupal\Core\Layout\LayoutPluginManager;
 
 /**
- * Custom Section Storage to dynamically restrict layouts.
+ * Custom layout plugin manager.
  */
-class CustomSectionStorage implements SectionStorageInterface {
+class CustomLayoutManager extends LayoutPluginManager {
 
   /**
-   * The original section storage.
+   * Restrict available layouts dynamically.
    *
-   * @var \Drupal\layout_builder\SectionStorage\SectionStorageInterface
+   * @return array
+   *   Filtered layout definitions.
    */
-  protected $originalSectionStorage;
+  public function getDefinitions() {
+    $layouts = parent::getDefinitions();
 
-  /**
-   * Constructs a CustomSectionStorage object.
-   *
-   * @param \Drupal\layout_builder\SectionStorage\SectionStorageInterface $section_storage
-   *   The original section storage.
-   */
-  public function __construct(SectionStorageInterface $section_storage) {
-    $this->originalSectionStorage = $section_storage;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function getSections() {
-    return $this->originalSectionStorage->getSections();
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function getAvailableLayouts() {
-    // Get placed layouts from current sections.
-    $sections = $this->getSections();
-    $placed_layouts = [];
-
-    foreach ($sections as $section) {
-      $placed_layouts[] = $section->getLayoutId();
+    // Restrict layouts based on custom logic.
+    // Example: Filter to only certain layout IDs.
+    $allowed_layouts = [];
+    foreach ($layouts as $id => $definition) {
+      if (in_array($id, ['layout_one', 'layout_two'])) {
+        $allowed_layouts[$id] = $definition;
+      }
     }
 
-    // New detail page or no sections placed: allow all layouts.
-    if (empty($placed_layouts)) {
-      return $this->getAllLayouts();
-    }
-
-    // Restrict to the layout already placed.
-    $allowed_layout = reset($placed_layouts);
-    return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
-      return $layout->getPluginId() === $allowed_layout;
-    });
+    return $allowed_layouts;
   }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function getAllLayouts() {
-    // Fetch all layouts from the plugin manager.
-    return \Drupal::service('plugin.manager.core.layout')->getDefinitions();
-  }
-
-  /**
-   * Other methods required by the SectionStorageInterface can delegate
-   * to the original storage if no custom logic is required.
-   */
-  public function getStorageId() {
-    return $this->originalSectionStorage->getStorageId();
-  }
-
-  public function getContext() {
-    return $this->originalSectionStorage->getContext();
-  }
-
-  public function getEntity() {
-    return $this->originalSectionStorage->getEntity();
-  }
-
-  // Add other required methods...
 }
+
+----------
