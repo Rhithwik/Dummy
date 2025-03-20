@@ -1,153 +1,157 @@
-<?php
-
-services:
-  my_module.custom_section_storage_manager:
-    class: Drupal\my_module\Plugin\CustomSectionStorageManager
-    decorates: layout_builder.section_storage_manager
-    arguments: ['@layout_builder.section_storage_manager', '@plugin.manager.core.layout']
-    decoration_priority: 10
+To create a CKEditor 5 plugin for Drupal 10 that adds a <showmore></showmore> tag around selected text, follow these steps:
 
 
+---
 
+1. Create the CKEditor Plugin
 
-namespace Drupal\my_module\Plugin;
+First, define a JavaScript file for the CKEditor 5 plugin inside your custom module.
 
-use Drupal\layout_builder\SectionStorage\SectionStorageManager;
-use Drupal\layout_builder\SectionStorage\SectionStorageInterface;
+File: modules/custom/my_module/js/plugins/showmore.js
 
-/**
- * Custom Section Storage Manager for Layout Builder.
- */
-class CustomSectionStorageManager extends SectionStorageManager {
+import { Plugin } from '@ckeditor/ckeditor5-core';
+import { ButtonView } from '@ckeditor/ckeditor5-ui';
+import { findOptimalInsertionPosition } from '@ckeditor/ckeditor5-widget';
 
-  /**
-   * The layout plugin manager.
-   *
-   * @var \Drupal\Core\Layout\LayoutPluginManager
-   */
-  protected $layoutPluginManager;
+export default class ShowMorePlugin extends Plugin {
+    init() {
+        const editor = this.editor;
 
-  /**
-   * Constructs a CustomSectionStorageManager object.
-   *
-   * @param \Drupal\layout_builder\SectionStorage\SectionStorageManager $section_storage_manager
-   *   The original section storage manager.
-   * @param \Drupal\Core\Layout\LayoutPluginManager $layout_plugin_manager
-   *   The layout plugin manager.
-   */
-  public function __construct(SectionStorageManager $section_storage_manager, $layout_plugin_manager) {
-    parent::__construct($section_storage_manager->getEntityTypeManager());
-    $this->layoutPluginManager = $layout_plugin_manager;
-  }
+        // Add a new UI button
+        editor.ui.componentFactory.add('showMore', locale => {
+            const button = new ButtonView(locale);
 
-  /**
-   * {@inheritdoc}
-   */
-  public function getSectionStorage($storage_id) {
-    $section_storage = parent::getSectionStorage($storage_id);
+            button.set({
+                label: 'Show More',
+                withText: true,
+                tooltip: true
+            });
 
-    // Wrap the section storage with custom logic.
-    return new CustomSectionStorage($section_storage, $this->layoutPluginManager);
-  }
+            button.on('execute', () => {
+                const model = editor.model;
+                const selection = model.document.selection;
+                const selectedText = model.getSelectedContent(selection);
+
+                model.change(writer => {
+                    // Wrap selected text with <showmore>
+                    if (!selectedText.isEmpty) {
+                        const showMoreElement = writer.createElement('showMore');
+                        writer.append(selectedText, showMoreElement);
+
+                        const position = findOptimalInsertionPosition(selection, model);
+                        model.insertContent(showMoreElement, position);
+                    }
+                });
+            });
+
+            return button;
+        });
+
+        // Schema definition for <showmore>
+        editor.model.schema.extend('$text', { allowIn: 'showMore' });
+        editor.model.schema.register('showMore', {
+            allowWhere: '$block',
+            allowContentOf: '$block',
+            isInline: true
+        });
+
+        // Conversion
+        editor.conversion.elementToElement({
+            model: 'showMore',
+            view: 'showmore'
+        });
+
+        editor.conversion.for('editingDowncast').elementToElement({
+            model: 'showMore',
+            view: (modelElement, { writer }) => {
+                return writer.createContainerElement('showmore', {
+                    class: 'show-more'
+                });
+            }
+        });
+
+        editor.conversion.for('dataDowncast').elementToElement({
+            model: 'showMore',
+            view: 'showmore'
+        });
+
+        editor.conversion.for('upcast').elementToElement({
+            view: 'showmore',
+            model: 'showMore'
+        });
+    }
 }
 
 
+---
+
+2. Register the Plugin in Drupal
+
+Now, register this plugin in a CKEditor 5 configuration YAML file.
+
+File: modules/custom/my_module/config/install/ckeditor5.plugin.showmore.yml
+
+langcode: en
+status: true
+dependencies:
+  module:
+    - my_module
+id: showmore
+label: 'Show More Plugin'
+description: 'Wraps selected text with <showmore> tag.'
+provider: my_module
+plugin: showmore
+library: my_module/showmore_plugin
+
+
+---
+
+3. Define the Library
+
+Add the necessary JavaScript library to the module.
+
+File: modules/custom/my_module/my_module.libraries.yml
+
+showmore_plugin:
+  js:
+    js/plugins/showmore.js: {}
+  dependencies:
+    - core/drupal
+    - core/ckeditor5
+
+
+---
+
+4. Enable the Plugin in Drupal
+
+After adding the plugin, configure CKEditor 5 to use it:
+
+1. Go to Admin → Configuration → Content Authoring → Text formats and editors.
+
+
+2. Edit your CKEditor 5-enabled text format (e.g., "Full HTML").
+
+
+3. Under Available Plugins, enable Show More Plugin.
+
+
+4. Drag the Show More button into the toolbar.
+
+
+5. Save the configuration.
 
 
 
 
------
+---
 
+5. Clear Cache & Test
 
+Run the following command to clear caches:
 
-namespace Drupal\my_module\Plugin;
+drush cr
 
-use Drupal\layout_builder\SectionStorage\SectionStorageInterface;
+Now, when you select text in CKEditor 5 and click the "Show More" button, it will wrap the selected text with <showmore></showmore>.
 
-/**
- * Custom Section Storage for Layout Builder.
- */
-class CustomSectionStorage implements SectionStorageInterface {
+Would you like any modifications, such as additional styling or behavior?
 
-  /**
-   * The original section storage.
-   *
-   * @var \Drupal\layout_builder\SectionStorage\SectionStorageInterface
-   */
-  protected $originalSectionStorage;
-
-  /**
-   * The layout plugin manager.
-   *
-   * @var \Drupal\Core\Layout\LayoutPluginManager
-   */
-  protected $layoutPluginManager;
-
-  /**
-   * Constructs a CustomSectionStorage object.
-   *
-   * @param \Drupal\layout_builder\SectionStorage\SectionStorageInterface $section_storage
-   *   The original section storage.
-   * @param \Drupal\Core\Layout\LayoutPluginManager $layout_plugin_manager
-   *   The layout plugin manager.
-   */
-  public function __construct(SectionStorageInterface $section_storage, $layoutPluginManager) {
-    $this->originalSectionStorage = $section_storage;
-    $this->layoutPluginManager = $layoutPluginManager;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function getAvailableLayouts() {
-    // Get current sections and their layouts.
-    $sections = $this->originalSectionStorage->getSections();
-    $placed_layouts = [];
-
-    foreach ($sections as $section) {
-      $placed_layouts[] = $section->getLayoutId();
-    }
-
-    // If no layouts are placed, return all layouts.
-    if (empty($placed_layouts)) {
-      return $this->getAllLayouts();
-    }
-
-    // Restrict to the layout already placed.
-    $allowed_layout = reset($placed_layouts);
-    return array_filter($this->getAllLayouts(), function ($layout) use ($allowed_layout) {
-      return $layout->getPluginId() === $allowed_layout;
-    });
-  }
-
-  /**
-   * Get all available layouts.
-   *
-   * @return array
-   *   All available layout definitions.
-   */
-  protected function getAllLayouts() {
-    return $this->layoutPluginManager->getDefinitions();
-  }
-
-  /**
-   * Delegate other methods to the original storage.
-   */
-  public function getSections() {
-    return $this->originalSectionStorage->getSections();
-  }
-
-  public function getStorageId() {
-    return $this->originalSectionStorage->getStorageId();
-  }
-
-  public function getContext() {
-    return $this->originalSectionStorage->getContext();
-  }
-
-  public function getEntity() {
-    return $this->originalSectionStorage->getEntity();
-  }
-
-  // Implement other methods as needed...
-}
