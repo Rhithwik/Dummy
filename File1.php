@@ -1,212 +1,147 @@
-Here's the full code to create a custom Drupal 10 module named sce_ckeditor_customization that adds a CKEditor 5 plugin for inserting a <showmore> tag.
+In Drupal 10, CKEditor 5 plugins are registered using a combination of module configuration, YAML files, and JavaScript. Here's how a plugin is typically registered:
 
 
 ---
 
-1. Create the Module Structure
+1. Define the CKEditor Plugin in a JavaScript File
 
-Create the following directory structure under modules/custom/sce_ckeditor_customization/:
+Create a JavaScript file for your plugin inside your module, for example:
 
-sce_ckeditor_customization/
-│── config/install/
-│   ├── ckeditor5.plugin.showmore.yml
-│── icons/
-│   ├── showmore.svg
-│── js/plugins/
-│   ├── showmore.js
-│── sce_ckeditor_customization.info.yml
-│── sce_ckeditor_customization.libraries.yml
-│── sce_ckeditor_customization.module
+modules/custom/sce_ckeditor_customization/js/plugins/showmore.js
 
-
----
-
-2. Define the Module Info File
-
-Create the module definition file.
-
-File: sce_ckeditor_customization.info.yml
-
-name: 'SCE CKEditor Customization'
-type: module
-description: 'Adds a custom CKEditor 5 plugin to insert <showmore> tags.'
-package: Custom
-core_version_requirement: ^10
-dependencies:
-  - drupal:ckeditor5
-
-
----
-
-3. Register the Plugin with CKEditor
-
-Define the CKEditor 5 plugin configuration.
-
-File: config/install/ckeditor5.plugin.showmore.yml
-
-langcode: en
-status: true
-dependencies:
-  module:
-    - sce_ckeditor_customization
-id: showmore
-label: 'Show More Plugin'
-description: 'Wraps selected text with <showmore> tag.'
-provider: sce_ckeditor_customization
-plugin: showmore
-library: sce_ckeditor_customization/showmore_plugin
-
-
----
-
-4. Define the Library
-
-Register the JavaScript file and icon.
-
-File: sce_ckeditor_customization.libraries.yml
-
-showmore_plugin:
-  js:
-    js/plugins/showmore.js: {}
-  dependencies:
-    - core/drupal
-    - core/ckeditor5
-  images:
-    icons/showmore.svg: {}
-
-
----
-
-5. Create the CKEditor Plugin
-
-Implement the CKEditor 5 plugin.
-
-File: js/plugins/showmore.js
+This JavaScript file should define and register the plugin using CKEditor 5's API:
 
 import { Plugin } from '@ckeditor/ckeditor5-core';
 import { ButtonView } from '@ckeditor/ckeditor5-ui';
-import showMoreIcon from '../../icons/showmore.svg'; // Import the SVG icon
 
 export default class ShowMorePlugin extends Plugin {
-    init() {
-        const editor = this.editor;
+  init() {
+    const editor = this.editor;
 
-        editor.ui.componentFactory.add('showMore', locale => {
-            const button = new ButtonView(locale);
+    editor.ui.componentFactory.add('showMore', (locale) => {
+      const button = new ButtonView(locale);
 
-            button.set({
-                label: 'Show More',
-                icon: showMoreIcon, // Use the imported SVG icon
-                tooltip: true
-            });
+      button.set({
+        label: 'Insert ShowMore',
+        withText: true,
+        tooltip: true
+      });
 
-            button.on('execute', () => {
-                const model = editor.model;
-                const selection = model.document.selection;
-                const selectedText = model.getSelectedContent(selection);
-
-                model.change(writer => {
-                    if (!selectedText.isEmpty) {
-                        const showMoreElement = writer.createElement('showMore');
-                        writer.append(selectedText, showMoreElement);
-                        model.insertContent(showMoreElement);
-                    }
-                });
-            });
-
-            return button;
+      button.on('execute', () => {
+        editor.model.change((writer) => {
+          const insertPosition = editor.model.document.selection.getFirstPosition();
+          writer.insertText('<showmore>', insertPosition);
         });
+      });
 
-        // Define schema for <showmore>
-        editor.model.schema.extend('$text', { allowIn: 'showMore' });
-        editor.model.schema.register('showMore', {
-            allowWhere: '$block',
-            allowContentOf: '$block',
-            isInline: true
-        });
-
-        // Conversion: Model <-> View
-        editor.conversion.elementToElement({
-            model: 'showMore',
-            view: 'showmore'
-        });
-
-        editor.conversion.for('editingDowncast').elementToElement({
-            model: 'showMore',
-            view: (modelElement, { writer }) => writer.createContainerElement('showmore', { class: 'show-more' })
-        });
-
-        editor.conversion.for('dataDowncast').elementToElement({
-            model: 'showMore',
-            view: 'showmore'
-        });
-
-        editor.conversion.for('upcast').elementToElement({
-            view: 'showmore',
-            model: 'showMore'
-        });
-    }
+      return button;
+    });
+  }
 }
 
 
 ---
 
-6. Add the Icon
+2. Register the Plugin in ckeditor5.plugins.yml
 
-Place an SVG icon for the button.
+In your module, create a file:
 
-File: icons/showmore.svg
+modules/custom/sce_ckeditor_customization/config/schema/ckeditor5.plugins.yml
 
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <path d="M12 4L4 12h16L12 4zm0 16l8-8H4l8 8z"/>
-</svg>
+Define your plugin like this:
+
+sce_ckeditor_customization_showmore:
+  id: showmore
+  label: 'ShowMore Button'
+  description: 'Adds a button to insert a <showmore> tag.'
+  class: '\Drupal\sce_ckeditor_customization\Plugin\CKEditor5Plugin\ShowMore'
+  library: 'sce_ckeditor_customization/showmore'
+  dependencies: []
 
 
 ---
 
-7. Clear Cache & Enable the Plugin
+3. Create the CKEditor Plugin Class in PHP
 
-After adding these files, clear caches and enable the module:
+Define a PHP class to register the plugin with Drupal:
 
-drush en sce_ckeditor_customization -y
+modules/custom/sce_ckeditor_customization/src/Plugin/CKEditor5Plugin/ShowMore.php
+
+<?php
+
+namespace Drupal\sce_ckeditor_customization\Plugin\CKEditor5Plugin;
+
+use Drupal\ckeditor5\CKEditor5PluginBase;
+
+/**
+ * Defines the "ShowMore" plugin.
+ *
+ * @CKEditor5Plugin(
+ *   id = "showmore",
+ *   label = @Translation("ShowMore"),
+ *   module = "sce_ckeditor_customization"
+ * )
+ */
+class ShowMore extends CKEditor5PluginBase {
+
+}
+
+
+---
+
+4. Define a Drupal Library
+
+Create a libraries.yml file inside your module:
+
+modules/custom/sce_ckeditor_customization/sce_ckeditor_customization.libraries.yml
+
+showmore:
+  version: 1.x
+  js:
+    js/plugins/showmore.js: { type: module }
+  dependencies:
+    - core/ckeditor5
+
+
+---
+
+5. Enable the Plugin in a Text Format
+
+1. Go to Configuration > Content Authoring > Text formats and editors (/admin/config/content/formats).
+
+
+2. Edit the text format where you want the plugin enabled (e.g., "Full HTML").
+
+
+3. Find your plugin (it should be listed as "ShowMore") and enable it.
+
+
+4. Save the changes.
+
+
+
+
+---
+
+6. Clear Cache
+
+Run:
+
 drush cr
 
-
----
-
-8. Enable the Plugin in CKEditor 5
-
-1. Go to Admin → Configuration → Content Authoring → Text formats and editors.
-
-
-2. Edit the text format using CKEditor 5 (e.g., "Full HTML").
-
-
-3. Enable the "Show More Plugin" under Available Plugins.
-
-
-4. Drag the "Show More" button into the toolbar.
-
-
-5. Save the configuration.
-
-
+Or go to Configuration > Performance and clear the cache.
 
 
 ---
 
-9. Test the Plugin
+How It Works
 
-Open a CKEditor 5 field.
+The JavaScript file defines the plugin behavior.
 
-Select some text.
+The YAML and PHP files register the plugin with Drupal.
 
-Click the Show More button.
-
-The text should be wrapped in <showmore></showmore>.
+The plugin is added to CKEditor when the text format is used.
 
 
-Now, your custom Drupal 10 module successfully adds a CKEditor 5 button that wraps selected text in a <showmore> tag!
-
-Would you like any improvements, such as styling or additional functionality?
+Now, when editing content, the "ShowMore" button should appear in the CKEditor toolbar.
 
